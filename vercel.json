@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/batches.json",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/batches.json"
+    },
+    {
+      "source": "/login",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/login"
+    },
+    {
+      "source": "/get/:path*",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/get/:path*"
+    },
+    {
+      "source": "/vg/:path*",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/vg/:path*"
+    },
+    {
+      "source": "/video",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/video"
+    },
+    {
+      "source": "/pdf",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/pdf"
+    },
+    {
+      "source": "/mpd",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/mpd"
+    },
+    {
+      "source": "/license-proxy",
+      "destination": "https://science-and-fun-bb139b66c325.herokuapp.com/license-proxy"
+    }
+  ]
+}
