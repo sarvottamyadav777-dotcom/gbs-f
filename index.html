@@ -268,6 +268,7 @@
 
     <script>
         lucide.createIcons();
+        const UPSTREAM_BASE = 'https://science-and-fun-bb139b66c325.herokuapp.com';
         let currentUser = JSON.parse(localStorage.getItem('gbstudy_user') || localStorage.getItem('nexthope_user') || localStorage.getItem('studybee_user') || 'null');
         let currentPhoneForLogin = "";
         let pendingAction = null;
@@ -275,6 +276,7 @@
         function updateAuthUI() {
             const btnText = document.getElementById('auth-btn-text');
             const authBtn = document.getElementById('auth-btn');
+            if (!btnText || !authBtn) return;
             if (currentUser && currentUser.token) {
                 btnText.innerText = currentUser.name ? currentUser.name.split(' ')[0] : 'Logout';
                 authBtn.classList.add('text-themeNeon', 'border-themePurple/40', 'bg-themePurple/10');
@@ -340,17 +342,13 @@
             document.getElementById('login-phone').value = "";
         }
         
-        const API_BASE = window.location.origin;
-        const UPSTREAM_BASE = 'https://science-and-fun-bb139b66c325.herokuapp.com';
-
         async function resilientFetch(path) {
             try {
                 const res = await fetch(path);
                 if (res.ok) return res;
             } catch (e) {
-                console.warn('Local fetch failed, trying upstream...', e);
+                console.warn('Local fetch failed, trying upstream fallback...', e);
             }
-            // Fallback to upstream base
             const target = path.startsWith('http') ? path : `${UPSTREAM_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
             return await fetch(target);
         }
@@ -395,7 +393,83 @@
                 } else { throw new Error(data.message || "Invalid OTP"); }
             } catch (error) { showLoginError(error.message); }
         }
-
+        
+        document.getElementById('login-phone').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendOTP(); });
+        document.getElementById('login-otp').addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyOTP(); });
+        
+        window.showToast = function(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            toast.className = `fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 px-5 py-3 rounded-2xl font-semibold text-sm border slide-down-toast backdrop-blur-md`;
+            
+            if (type === 'success') {
+                toast.classList.add('bg-[#130a1c]', 'border-themePurple/50', 'text-white', 'shadow-[0_10px_30px_rgba(168,85,247,0.3)]');
+                icon.className = "w-4 h-4 text-themeNeon";
+                icon.setAttribute('data-lucide', 'check-circle-2');
+            } else {
+                toast.classList.add('bg-red-950/80', 'border-red-500/50', 'text-red-200');
+                icon.className = "w-4 h-4 text-red-400";
+                icon.setAttribute('data-lucide', 'alert-circle');
+            }
+            
+            document.getElementById('toast-msg').innerText = msg;
+            lucide.createIcons({ root: toast });
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translate(-50%, -20px)';
+                setTimeout(() => {
+                    toast.classList.add('hidden');
+                    toast.classList.remove('flex');
+                    toast.style = '';
+                }, 300);
+            }, 3000);
+        };
+        
+        window.handleStudyClick = function(event, batchId) {
+            event.preventDefault();
+            checkAuth(() => { window.location.href = `content.html?id=${batchId}`; });
+        };
+        
+        window.toggleEnroll = function(event, batchId) {
+            event.stopPropagation();
+            checkAuth(() => {
+                batchId = String(batchId);
+                const index = wishlist.indexOf(batchId);
+                const container = document.getElementById(`enroll-container-${batchId}`);
+                if (index === -1) {
+                    wishlist.push(batchId);
+                    showToast("Added to your enrollments!", "success");
+                    if (container) container.innerHTML = `<button onclick="toggleEnroll(event, '${batchId}')" class="bg-themeGreen/15 text-themeGreen border border-themeGreen/30 px-3.5 py-2 rounded-xl text-[11px] font-black tracking-wider flex items-center gap-1.5 hover:bg-themeGreen/25 transition-colors shadow-inner"><i data-lucide="check" class="w-3.5 h-3.5"></i> ENROLLED</button>`;
+                } else {
+                    wishlist.splice(index, 1);
+                    if (container) container.innerHTML = `<button onclick="toggleEnroll(event, '${batchId}')" class="bg-gradient-to-r from-themePurple to-purple-600 hover:opacity-90 text-white px-3.5 py-2 rounded-xl text-[11px] font-black tracking-wider flex items-center gap-1.5 transition-all btn-click-effect shadow-[0_4px_10px_rgba(168,85,247,0.3)]"><i data-lucide="plus" class="w-3.5 h-3.5"></i> ENROLL</button>`;
+                    if (currentTab === 'wishlist') applyFiltersAndRender(true);
+                }
+                localStorage.setItem('gbstudy_wishlist', JSON.stringify(wishlist));
+                localStorage.setItem('nexthope_wishlist', JSON.stringify(wishlist));
+                localStorage.setItem('studybee_wishlist', JSON.stringify(wishlist));
+                updateWishlistCount();
+                lucide.createIcons();
+            });
+        };
+        
+        let batchesData = { new: [] };
+        let currentTab = 'new';
+        let wishlist = JSON.parse(localStorage.getItem('gbstudy_wishlist') || localStorage.getItem('nexthope_wishlist') || localStorage.getItem('studybee_wishlist') || '[]').map(String);
+        const ITEMS_PER_PAGE = 12;
+        let currentlyDisplayedCount = 0;
+        let currentFilteredData = [];
+        let searchTimer = null;
+        
+        const batchGrid = document.getElementById('batchGrid');
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const emptyState = document.getElementById('emptyState');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const loadMoreContainer = document.getElementById('loadMoreContainer');
+        const totalBatchCountEl = document.getElementById('total-batch-count');
+        
         async function fetchBatches() {
             try {
                 let response = null;
@@ -421,15 +495,17 @@
                 batchesData.new = [...(rawData.new || []), ...(rawData.old || [])];
                 
                 // Set total count dynamically from JSON
-                totalBatchCountEl.innerText = batchesData.new.length;
+                if (totalBatchCountEl) totalBatchCountEl.innerText = batchesData.new.length;
                 
-                loadingIndicator.classList.add('hidden');
-                batchGrid.classList.remove('hidden');
+                if (loadingIndicator) loadingIndicator.classList.add('hidden');
+                if (batchGrid) batchGrid.classList.remove('hidden');
                 applyFiltersAndRender(true);
             } catch (error) {
                 console.error("Error fetching batches:", error);
-                loadingIndicator.innerHTML = `<div class="col-span-full text-center py-20"><div class="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><i data-lucide="alert-triangle" class="w-8 h-8 text-red-400"></i></div><h3 class="text-white font-bold text-lg mb-1">Failed to load batches</h3><p class="text-stone-400 text-sm">Please check your connection or try again later.</p></div>`;
-                lucide.createIcons();
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = `<div class="col-span-full text-center py-20"><div class="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><i data-lucide="alert-triangle" class="w-8 h-8 text-red-400"></i></div><h3 class="text-white font-bold text-lg mb-1">Failed to load batches</h3><p class="text-stone-400 text-sm">Please check your connection or try again later.</p></div>`;
+                    lucide.createIcons();
+                }
             }
         }
         
@@ -458,8 +534,10 @@
             });
             
             const activeTab = document.getElementById(`tab-${tabName}`);
-            activeTab.classList.remove('bg-transparent', 'text-stone-400', 'border-transparent');
-            activeTab.classList.add('bg-themePurple/10', 'text-white', 'border-themePurple/30', 'shadow-[0_0_15px_rgba(168,85,247,0.15)]');
+            if (activeTab) {
+                activeTab.classList.remove('bg-transparent', 'text-stone-400', 'border-transparent');
+                activeTab.classList.add('bg-themePurple/10', 'text-white', 'border-themePurple/30', 'shadow-[0_0_15px_rgba(168,85,247,0.15)]');
+            }
             
             applyFiltersAndRender(true);
         };
@@ -473,40 +551,50 @@
             } else { currentFilteredData = batchesData[currentTab] || []; }
             
             if (query) currentFilteredData = currentFilteredData.filter(batch => batch.title.toLowerCase().includes(query) || String(batch.id).includes(query));
-            if (resetPagination) { currentlyDisplayedCount = 0; batchGrid.innerHTML = ''; }
+            if (resetPagination) { currentlyDisplayedCount = 0; if (batchGrid) batchGrid.innerHTML = ''; }
             
             renderBatchSlice();
         }
         
         function renderBatchSlice() {
             if (currentFilteredData.length === 0) {
-                batchGrid.classList.add('hidden');
-                emptyState.classList.remove('hidden');
-                emptyState.classList.add('flex');
-                loadMoreContainer.classList.add('hidden');
+                if (batchGrid) batchGrid.classList.add('hidden');
+                if (emptyState) {
+                    emptyState.classList.remove('hidden');
+                    emptyState.classList.add('flex');
+                }
+                if (loadMoreContainer) loadMoreContainer.classList.add('hidden');
                 return;
             }
-            emptyState.classList.add('hidden');
-            emptyState.classList.remove('flex');
-            batchGrid.classList.remove('hidden');
+            if (emptyState) {
+                emptyState.classList.add('hidden');
+                emptyState.classList.remove('flex');
+            }
+            if (batchGrid) batchGrid.classList.remove('hidden');
             
             const nextCount = Math.min(currentlyDisplayedCount + ITEMS_PER_PAGE, currentFilteredData.length);
             const itemsToRender = currentFilteredData.slice(currentlyDisplayedCount, nextCount);
             
             const html = itemsToRender.map((batch, index) => createCardHTML(batch, index)).join('');
-            if (currentlyDisplayedCount === 0) batchGrid.innerHTML = html;
-            else batchGrid.insertAdjacentHTML('beforeend', html);
+            if (currentlyDisplayedCount === 0) {
+                if (batchGrid) batchGrid.innerHTML = html;
+            } else {
+                if (batchGrid) batchGrid.insertAdjacentHTML('beforeend', html);
+            }
             
             currentlyDisplayedCount = nextCount;
             lucide.createIcons();
             
-            if (currentlyDisplayedCount < currentFilteredData.length) loadMoreContainer.classList.remove('hidden');
-            else loadMoreContainer.classList.add('hidden');
+            if (currentlyDisplayedCount < currentFilteredData.length) {
+                if (loadMoreContainer) loadMoreContainer.classList.remove('hidden');
+            } else {
+                if (loadMoreContainer) loadMoreContainer.classList.add('hidden');
+            }
         }
         
         window.loadMore = function() {
             const btn = document.getElementById('loadMoreBtn');
-            if (btn.disabled) return;
+            if (!btn || btn.disabled) return;
             const originalHtml = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-themeNeon"></i> <span class="text-themeNeon">Loading...</span>`;
@@ -546,14 +634,22 @@
         function updateWishlistCount() {
             const countEl = document.getElementById('wishlist-count');
             const mobileIndicator = document.getElementById('mobile-wishlist-indicator');
+            if (!countEl) return;
             if (wishlist.length > 0) { 
                 countEl.innerText = wishlist.length; 
                 countEl.classList.remove('hidden'); 
-                mobileIndicator.classList.remove('hidden'); 
+                if (mobileIndicator) mobileIndicator.classList.remove('hidden'); 
             } else { 
                 countEl.classList.add('hidden'); 
-                mobileIndicator.classList.add('hidden'); 
+                if (mobileIndicator) mobileIndicator.classList.add('hidden'); 
             }
+        }
+
+        // Initialize immediately and also on DOMContentLoaded
+        updateWishlistCount();
+        fetchBatches();
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => { updateWishlistCount(); fetchBatches(); });
         }
     </script>
 </body>
