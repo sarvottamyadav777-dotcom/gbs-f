@@ -1,0 +1,6 @@
+{
+  "name": "GB STUDY",
+  "description": "GB STUDY - Premium batches, video lectures, notes, and study material portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
